@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Run indentation regressions with Neovim: python3 test/sleuth-indentation."""
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+
+plugin = Path(__file__).resolve().parents[1] / "plugin" / "sleuth.vim"
+
+# A declaration-heavy prefix must not outweigh the rest of the sample.
+declarations = "void declaration(\n    int argument =\n        default_value);\n" * 40
+two_space_blocks = "void function() {\n  statement();\n}\n" * 100
+four_space_blocks = "void function() {\n    statement();\n}\n" * 100
+tab_blocks = "void function() {\n\tstatement();\n}\n" * 100
+cases = [
+    ("continuations", declarations + two_space_blocks, None, [2, True]),
+    ("four-spaces", four_space_blocks, None, [4, True]),
+    ("tabs", tab_blocks, None, [4, False]),
+    ("editorconfig", two_space_blocks,
+     "root = true\n[*]\nindent_style = space\nindent_size = 6\n", [6, True]),
+    ("sample-limit", "// padding\n" * 1024 + two_space_blocks, None, [4, False]),
+]
+
+for name, contents, editorconfig, expected in cases:
+    with tempfile.TemporaryDirectory(prefix="sleuth-test-") as directory:
+        root = Path(directory)
+        # Stop EditorConfig discovery at the fixture directory.
+        (root / ".editorconfig").write_text(editorconfig or "root = true\n")
+        fixture = root / "fixture.cpp"
+        fixture.write_text(contents)
+        result = root / "result.json"
+        lua = (
+            "lua vim.fn.writefile({vim.json.encode({vim.fn.shiftwidth(), "
+            "vim.bo.expandtab})}, " + json.dumps(str(result)) + ")"
+        )
+        subprocess.run([
+            os.getenv("NVIM_EXE", "nvim"), "--headless", "-u", "NONE",
+            "-i", "NONE", "-n", "--cmd", "set shiftwidth=4 tabstop=4",
+            "--cmd", "let g:sleuth_neighbor_limit = 0",
+            "--cmd", "execute 'source ' . fnameescape(" + json.dumps(str(plugin)) + ")",
+            str(fixture), "+" + lua, "+qa!",
+        ], check=True, env={**os.environ, "NVIM_LOG_FILE": str(root / "nvim.log")})
+        actual = json.loads(result.read_text())
+        assert actual == expected, f"{name}: expected {expected}, got {actual}"
+        print(f"PASS {name}")

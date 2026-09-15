@@ -100,17 +100,6 @@ function! s:Guess(source, detected, lines) abort
       endif
       let heuristics.checked += 1
     endif
-    if heuristics.checked >= 32 && (heuristics.hard > 3 || heuristics.soft > 3) && get(heuristics.indents, increment) * 2 > heuristics.checked
-      if heuristics.spaces
-        break
-      elseif !exists('no_space_indent')
-        let no_space_indent = stridx("\n" . join(a:lines, "\n"), "\n  ") < 0
-        if no_space_indent
-          break
-        endif
-      endif
-      break
-    endif
   endfor
 
   let a:detected.heuristics[a:source] = heuristics
